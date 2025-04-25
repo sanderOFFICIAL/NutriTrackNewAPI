@@ -1,0 +1,10 @@
+# Firebase Admin
+nutri-track-app-kotlin-firebase-adminsdk-fbsvc-a6d5cc7a8f.json
+
+# Temporary files
+bin/
+obj/
+
+# Folder for VsCode
+.vscode/
+
