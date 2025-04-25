@@ -50,7 +50,13 @@ namespace NutriTrackAPI.Controllers
                     }
                 }
 
-                var (calories, protein, carbs, fats) = CalculateNutrition(
+                // Validate duration_weeks
+                if (request.duration_weeks <= 0)
+                {
+                    return BadRequest(new { message = "Duration weeks must be greater than zero." });
+                }
+
+                var (calories, protein, carbs, fats, warning) = CalculateNutrition(
                     currentWeight: user.current_weight.Value,
                     targetWeight: request.target_weight,
                     durationWeeks: request.duration_weeks,
@@ -81,6 +87,10 @@ namespace NutriTrackAPI.Controllers
                 await _context.SaveChangesAsync();
 
                 var response = MapToGoalResponse(goal);
+                if (!string.IsNullOrEmpty(warning))
+                {
+                    response.warning = warning;
+                }
                 return CreatedAtAction(
                     actionName: nameof(GetGoal),
                     controllerName: "Goal",
@@ -188,10 +198,16 @@ namespace NutriTrackAPI.Controllers
                     return NotFound(new { message = "Goal not found for the specified goal ID and user." });
                 }
 
+                // Validate duration_weeks
+                if (userGoal.duration_weeks <= 0)
+                {
+                    return BadRequest(new { message = "Duration weeks must be greater than zero." });
+                }
+
                 userGoal.target_weight = request.new_weight;
                 _context.Entry(userGoal).State = EntityState.Modified;
 
-                var (calories, protein, carbs, fats) = CalculateNutrition(
+                var (calories, protein, carbs, fats, warning) = CalculateNutrition(
                     currentWeight: user.current_weight.Value,
                     targetWeight: userGoal.target_weight,
                     durationWeeks: userGoal.duration_weeks,
@@ -209,7 +225,8 @@ namespace NutriTrackAPI.Controllers
                 _context.Entry(userGoal).State = EntityState.Modified;
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = "Target weight updated and goal recalculated successfully." });
+                var response = new { message = "Target weight updated and goal recalculated successfully.", warning = warning };
+                return Ok(response);
             }
             catch (Exception ex)
             {
@@ -278,7 +295,7 @@ namespace NutriTrackAPI.Controllers
             };
         }
 
-        private (double calories, double protein, double carbs, double fats) CalculateNutrition(
+        private (double calories, double protein, double carbs, double fats, string warning) CalculateNutrition(
             double currentWeight,
             double targetWeight,
             int durationWeeks,
@@ -288,10 +305,14 @@ namespace NutriTrackAPI.Controllers
             ActivityLevel activityLevel,
             int birthYear)
         {
+            const double CaloriesPerKg = 7700; // Кількість калорій на 1 кг ваги
+            string warning = null;
+
+            // Calculate age
             int currentYear = DateTime.UtcNow.Year;
             int age = currentYear - birthYear;
-            const double CaloriesPerKg = 7700;
 
+            // Calculate BMR using Mifflin-St Jeor formula
             double bmr;
             if (gender.ToLower() == "male")
             {
@@ -302,6 +323,7 @@ namespace NutriTrackAPI.Controllers
                 bmr = (10 * currentWeight) + (6.25 * height) - (5 * age) - 161;
             }
 
+            // Calculate TDEE based on activity level
             double tdee = bmr;
             switch (activityLevel)
             {
@@ -309,47 +331,99 @@ namespace NutriTrackAPI.Controllers
                     tdee *= 1.2;
                     break;
                 case ActivityLevel.Light:
-                    tdee *= 1.3;
+                    tdee *= 1.37;
                     break;
                 case ActivityLevel.Moderate:
-                    tdee *= 1.4;
+                    tdee *= 1.42;
                     break;
                 case ActivityLevel.High:
-                    tdee *= 1.5;
+                    tdee *= 1.62;
                     break;
             }
 
+            // Calculate weight difference and required calorie adjustment
             double weightDifference = targetWeight - currentWeight; // Позитивне для набору, негативне для втрати
             double totalCaloriesNeeded = Math.Abs(weightDifference) * CaloriesPerKg; // Загальні калорії для зміни ваги
             double weeklyCalorieAdjustment = totalCaloriesNeeded / durationWeeks; // Тижневий дефіцит/надлишок
             double dailyCalorieAdjustment = weeklyCalorieAdjustment / 7; // Денний дефіцит/надлишок
 
+            // Warn if calorie adjustment is unrealistic
+            if (dailyCalorieAdjustment > 2000)
+            {
+                warning = $"Warning: Daily calorie adjustment ({dailyCalorieAdjustment:F2} kcal) is highly unrealistic. Consider increasing duration to at least {Math.Ceiling(Math.Abs(weightDifference) / 0.5)} weeks for safer weight change.";
+            }
+
+            // Adjust daily calories based on goal type
             double dailyCalories = tdee;
+            if (goalType == GoalType.Loss)
+            {
+                dailyCalories -= dailyCalorieAdjustment;
+                dailyCalories = Math.Max(dailyCalories, gender.ToLower() == "male" ? 1500 : 1200);
+            }
+            else if (goalType == GoalType.Gain)
+            {
+                dailyCalories += dailyCalorieAdjustment;
+            }
+            // For Maintain, dailyCalories remains TDEE
+
+            // Calculate macronutrients based on goal type
+            double proteinPerKg;
+            double fatPercentage;
+            double carbPercentage;
             switch (goalType)
             {
                 case GoalType.Loss:
-                    dailyCalories -= dailyCalorieAdjustment;
-                    dailyCalories = Math.Max(dailyCalories, gender.ToLower() == "male" ? 1500 : 1200);
+                    proteinPerKg = 1.8; // 1.8 г/кг для втрати ваги
+                    fatPercentage = 0.20; // 20% калорій від жирів
+                    carbPercentage = 0.40; // 40% калорій від вуглеводів
                     break;
                 case GoalType.Gain:
-                    dailyCalories += dailyCalorieAdjustment;
-                    dailyCalories = Math.Min(dailyCalories, tdee + 1000);
+                    proteinPerKg = 2.2; // 2.2 г/кг для набору ваги
+                    fatPercentage = 0.25; // 25% калорій від жирів
+                    carbPercentage = 0.45; // 45% калорій від вуглеводів
                     break;
                 case GoalType.Maintain:
-                    dailyCalories = tdee;
+                default:
+                    proteinPerKg = 1.4; // 1.4 г/кг для підтримки
+                    fatPercentage = 0.30; // 30% калорій від жирів
+                    carbPercentage = 0.40; // 40% калорій від вуглеводів
                     break;
             }
 
-            double protein = currentWeight * 2.0;
-            double fats = (dailyCalories * 0.25) / 9;
-            double carbs = (dailyCalories - (protein * 4) - (fats * 9)) / 4;
+            // Adjust proteinPerKg based on weight difference and duration
+            double averageWeight = (currentWeight + targetWeight) / 2;
+            if (Math.Abs(weightDifference) > 20)
+            {
+                proteinPerKg += 0.3; // Бонус для великих змін ваги
+            }
+            if (durationWeeks < 10)
+            {
+                proteinPerKg += 0.1; // Бонус для коротких періодів
+            }
+
+            // Calculate protein based on average weight
+            double protein = averageWeight * proteinPerKg;
+
+            // Warn if protein intake is extremely high
+            if (protein / averageWeight > 3)
+            {
+                warning = (string.IsNullOrEmpty(warning) ? "" : warning + " ") +
+                         $"Warning: Protein intake ({protein:F2} g, {protein / averageWeight:F2} g/kg) is extremely high and may not be sustainable.";
+            }
+
+            // Calculate fats and carbs
+            double fats = (dailyCalories * fatPercentage) / 9;
+            double proteinCalories = protein * 4;
+            double fatCalories = fats * 9;
+            double carbCalories = dailyCalories * carbPercentage;
+            double carbs = carbCalories / 4;
 
             // Ensure non-negative macronutrients
             protein = Math.Max(protein, 0);
             fats = Math.Max(fats, 0);
             carbs = Math.Max(carbs, 0);
 
-            return (dailyCalories, protein, carbs, fats);
+            return (dailyCalories, protein, carbs, fats, warning);
         }
 
         // DTOs
@@ -378,6 +452,7 @@ namespace NutriTrackAPI.Controllers
             public bool is_approved_by_consultant { get; set; }
             public UserBasicInfo? user { get; set; }
             public ConsultantBasicInfo? consultant { get; set; }
+            public string? warning { get; set; }
         }
 
         public class UserBasicInfo
