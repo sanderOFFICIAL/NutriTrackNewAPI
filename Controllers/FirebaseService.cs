@@ -11,7 +11,7 @@ public class FirebaseService
         {
             FirebaseApp.Create(new AppOptions()
             {
-                Credential = GoogleCredential.FromFile("nutri-track-app-kotlin-firebase-adminsdk-fbsvc-a6d5cc7a8f.json")
+                Credential = GoogleCredential.FromFile("nutritrackkotlin-firebase-adminsdk-fbsvc-6517be9f24.json")
             });
             _initialized = true;
         }

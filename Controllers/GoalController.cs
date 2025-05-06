@@ -263,7 +263,33 @@ namespace NutriTrackAPI.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+        [HttpDelete("delete-goal/{goalId}")]
+        public async Task<IActionResult> DeleteGoal(int goalId, [FromQuery] string idToken)
+        {
+            try
+            {
+                FirebaseService.Initialize();
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(idToken);
+                string userId = decodedToken.Uid;
 
+                var goal = await _context.UserGoals
+                    .FirstOrDefaultAsync(g => g.goal_id == goalId && g.user_uid == userId);
+
+                if (goal == null)
+                {
+                    return NotFound(new { message = "Goal not found or user not authorized to delete this goal." });
+                }
+
+                _context.UserGoals.Remove(goal);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Goal successfully deleted." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
         private GoalResponse MapToGoalResponse(UserGoal goal)
         {
             return new GoalResponse
@@ -378,7 +404,7 @@ namespace NutriTrackAPI.Controllers
                     carbPercentage = 0.40; // 40% калорій від вуглеводів
                     break;
                 case GoalType.Gain:
-                    proteinPerKg = 2.2; // 2.2 г/кг для набору ваги
+                    proteinPerKg = 1.9; // 2.2 г/кг для набору ваги
                     fatPercentage = 0.25; // 25% калорій від жирів
                     carbPercentage = 0.45; // 45% калорій від вуглеводів
                     break;
@@ -480,5 +506,12 @@ namespace NutriTrackAPI.Controllers
             public required string IdToken { get; set; }
             public int GoalId { get; set; }
         }
+
+        public class DeleteGoalRequest
+        {
+            public int GoalId { get; set; }
+            public string IdToken { get; set; }
+        }
+
     }
 }
