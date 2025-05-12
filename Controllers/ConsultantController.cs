@@ -64,6 +64,123 @@ namespace NutriTrack.Controllers
             }
 
         }
+        [HttpPost("user-send-invite")]
+        public async Task<IActionResult> UserSendInviteToConsultant([FromBody] UserInviteConsultantRequest request)
+        {
+            try
+            {
+                FirebaseService.Initialize();
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(request.idToken);
+                string uid = decodedToken.Uid;
+
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.user_uid == uid);
+                if (user == null)
+                {
+                    return NotFound(new { message = "User not found." });
+                }
+
+                var consultant = await _context.Consultants.FirstOrDefaultAsync(c => c.consultant_uid == request.consultant_uid);
+                if (consultant == null)
+                {
+                    return NotFound(new { message = "Consultant not found." });
+                }
+
+                var existingRequest = await _context.ConsultantRequests
+                    .FirstOrDefaultAsync(r => r.user_uid == uid && r.consultant_uid == request.consultant_uid && r.status == "pending");
+
+                if (existingRequest != null)
+                {
+                    return BadRequest(new { message = "Invite already sent." });
+                }
+
+                var consultantRequest = new ConsultantRequest
+                {
+                    consultant_uid = request.consultant_uid,
+                    user_uid = uid,
+                    status = "pending",
+                    created_at = DateTime.UtcNow,
+                    Consultant = consultant,
+                    User = user
+                };
+
+                _context.ConsultantRequests.Add(consultantRequest);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Invite sent to consultant successfully." });
+            }
+            catch (FirebaseAuthException ex)
+            {
+                return Unauthorized(new { message = "Invalid token", error = ex.Message });
+            }
+        }
+
+        [HttpPost("consultant-respond-invite")]
+        public async Task<IActionResult> ConsultantRespondToUserInvite([FromBody] ConsultantRespondToInviteRequest request)
+        {
+            try
+            {
+                FirebaseService.Initialize();
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(request.idToken);
+                string uid = decodedToken.Uid;
+
+                var consultant = await _context.Consultants.FirstOrDefaultAsync(c => c.consultant_uid == uid);
+                if (consultant == null)
+                {
+                    return NotFound(new { message = "Consultant not found." });
+                }
+
+                var consultantRequest = await _context.ConsultantRequests
+                    .FirstOrDefaultAsync(cr => cr.consultant_uid == uid && cr.user_uid == request.user_uid && cr.status == "pending");
+
+                if (consultantRequest == null)
+                {
+                    return NotFound(new { message = "Invite not found or already responded to." });
+                }
+
+                if (request.is_accepted)
+                {
+                    if (consultant.current_clients >= consultant.max_clients)
+                    {
+                        return BadRequest(new { message = "No available slots for new clients." });
+                    }
+
+                    consultantRequest.status = "accepted";
+                    var user = await _context.Users.FindAsync(request.user_uid);
+                    if (user == null)
+                    {
+                        return NotFound(new { message = "User not found." });
+                    }
+
+                    var userConsultant = new UserConsultant
+                    {
+                        user_uid = request.user_uid,
+                        consultant_uid = uid,
+                        is_active = true,
+                        assignment_date = DateTime.UtcNow,
+                        User = user,
+                        Consultant = consultant
+                    };
+
+                    _context.UserConsultants.Add(userConsultant);
+                    consultant.current_clients += 1;
+                    _context.Entry(consultant).State = EntityState.Modified;
+                }
+                else
+                {
+                    consultantRequest.status = "rejected";
+                }
+
+                consultantRequest.responded_at = DateTime.UtcNow;
+                _context.Entry(consultantRequest).State = EntityState.Modified;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Invite response recorded." });
+            }
+            catch (FirebaseAuthException ex)
+            {
+                return Unauthorized(new { message = "Invalid token", error = ex.Message });
+            }
+        }
 
         [HttpPost("user-respond-invite")]
         public async Task<IActionResult> RespondToInvite([FromBody] RespondToInviteRequest request)
@@ -322,7 +439,8 @@ namespace NutriTrack.Controllers
                         c.created_at,
                         c.last_login,
                         c.max_clients,
-                        c.current_clients
+                        c.current_clients,
+                        c.gender
                     })
                     .ToListAsync();
 
@@ -393,4 +511,17 @@ namespace NutriTrack.Controllers
         public required string idToken { get; set; }
         public required string user_uid { get; set; }
     }
+    public class UserInviteConsultantRequest
+    {
+        public required string idToken { get; set; }
+        public required string consultant_uid { get; set; }
+    }
+
+    public class ConsultantRespondToInviteRequest
+    {
+        public required string idToken { get; set; }
+        public required string user_uid { get; set; }
+        public bool is_accepted { get; set; }
+    }
+
 }

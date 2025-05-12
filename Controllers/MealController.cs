@@ -45,10 +45,10 @@ namespace NutriTrack.Controllers
                         entry_date = DateTime.UtcNow.Date,
                         product_name = product.product_name,
                         quantity_grams = product.quantity_grams,
-                        calories = (product.calories / 100) * product.quantity_grams,
-                        protein = (product.protein / 100) * product.quantity_grams,
-                        carbs = (product.carbs / 100) * product.quantity_grams,
-                        fats = (product.fats / 100) * product.quantity_grams,
+                        calories = product.calories,
+                        protein = product.protein,
+                        carbs = product.carbs,
+                        fats = product.fats,
                         created_at = DateTime.UtcNow,
                         User = user
                     };
@@ -65,49 +65,47 @@ namespace NutriTrack.Controllers
             }
         }
 
-        [HttpPost("delete-meal")]
-        public async Task<IActionResult> DeleteMeal([FromBody] DeleteMealRequest request)
+
+        [HttpDelete("delete-meal")]
+        public async Task<IActionResult> DeleteMeal([FromQuery] string idToken, [FromQuery] int entryId)
         {
             try
             {
+                // Ініціалізація Firebase (одноразово при старті додатку було б краще)
                 FirebaseService.Initialize();
-                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(request.IdToken);
+
+                // Верифікація токена Firebase
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(idToken);
                 string uid = decodedToken.Uid;
 
+                // Перевірка наявності користувача
                 var user = await _context.Users.FindAsync(uid);
                 if (user == null)
                 {
                     return NotFound(new { message = "User not found." });
                 }
 
-                var query = _context.MealEntries.Where(me => me.user_uid == uid);
+                // Пошук запису по id
+                var mealEntry = await _context.MealEntries
+                    .FirstOrDefaultAsync(me => me.user_uid == uid && me.entry_id == entryId);
 
-                if (request.EntryId.HasValue)
+                if (mealEntry == null)
                 {
-                    query = query.Where(me => me.entry_id == request.EntryId.Value);
-                }
-                else
-                {
-                    return BadRequest(new { message = "Either entryId must be provided." });
+                    return NotFound(new { message = "Meal entry not found." });
                 }
 
-                var mealsToDelete = await query.ToListAsync();
-
-                if (!mealsToDelete.Any())
-                {
-                    return NotFound(new { message = "No meal entries found matching the provided criteria." });
-                }
-
-                _context.MealEntries.RemoveRange(mealsToDelete);
+                // Видалення
+                _context.MealEntries.Remove(mealEntry);
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = "Meal entries deleted successfully.", deletedCount = mealsToDelete.Count });
+                return Ok(new { message = "Meal entry deleted successfully." });
             }
             catch (Exception ex)
             {
                 return BadRequest(new { message = ex.Message });
             }
         }
+
 
         [HttpGet("get-all-meals")]
         public async Task<IActionResult> GetAllMealsForUser([FromQuery] string idToken)
