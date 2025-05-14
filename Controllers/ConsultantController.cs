@@ -43,6 +43,15 @@ namespace NutriTrack.Controllers
                     return NotFound(new { message = "User not found." });
                 }
 
+                // Check if an invite has already been sent
+                var existingRequest = await _context.ConsultantRequests
+                    .FirstOrDefaultAsync(r => r.consultant_uid == uid && r.user_uid == request.user_uid && r.status == "pending");
+
+                if (existingRequest != null)
+                {
+                    return BadRequest(new { message = "Invite already sent." });
+                }
+
                 var consultantRequest = new ConsultantRequest
                 {
                     consultant_uid = uid,
@@ -62,8 +71,8 @@ namespace NutriTrack.Controllers
             {
                 return Unauthorized(new { message = "Invalid token", error = ex.Message });
             }
-
         }
+
         [HttpPost("user-send-invite")]
         public async Task<IActionResult> UserSendInviteToConsultant([FromBody] UserInviteConsultantRequest request)
         {
@@ -246,12 +255,12 @@ namespace NutriTrack.Controllers
         }
 
         [HttpDelete("consultant-remove-user")]
-        public async Task<IActionResult> RemoveUser([FromBody] RemoveUserRequest request)
+        public async Task<IActionResult> RemoveUser([FromQuery] string idToken, [FromQuery] string user_uid)
         {
             try
             {
                 FirebaseService.Initialize();
-                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(request.idToken);
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(idToken);
                 string uid = decodedToken.Uid;
 
                 var consultant = await _context.Consultants.FindAsync(uid);
@@ -261,7 +270,7 @@ namespace NutriTrack.Controllers
                 }
 
                 var userConsultant = await _context.UserConsultants
-                    .FirstOrDefaultAsync(uc => uc.user_uid == request.user_uid && uc.consultant_uid == uid);
+                    .FirstOrDefaultAsync(uc => uc.user_uid == user_uid && uc.consultant_uid == uid);
 
                 if (userConsultant == null)
                 {
@@ -274,7 +283,7 @@ namespace NutriTrack.Controllers
                 _context.Entry(consultant).State = EntityState.Modified;
 
                 var activeRequests = await _context.ConsultantRequests
-                    .Where(cr => cr.user_uid == request.user_uid && cr.consultant_uid == uid && cr.status == "accepted")
+                    .Where(cr => cr.user_uid == user_uid && cr.consultant_uid == uid && cr.status == "accepted")
                     .ToListAsync();
 
                 if (activeRequests.Any())
@@ -290,8 +299,8 @@ namespace NutriTrack.Controllers
             {
                 return Unauthorized(new { message = "Invalid token", error = ex.Message });
             }
-
         }
+
         [HttpPut("update-nickname")]
         public async Task<IActionResult> UpdateConsultantNickname([FromBody] UpdateConsultantNicknameRequest request)
         {
@@ -456,6 +465,48 @@ namespace NutriTrack.Controllers
                     .ToListAsync();
 
                 return Ok(relationships);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("get-all-requests")]
+        public async Task<IActionResult> GetAllConsultantRequests()
+        {
+            try
+            {
+                var requests = await _context.ConsultantRequests
+                    .Include(cr => cr.User)
+                    .Include(cr => cr.Consultant)
+                    .Select(cr => new
+                    {
+                        RequestId = cr.request_id,
+                        UserUid = cr.user_uid,
+                        ConsultantUid = cr.consultant_uid,
+                        Status = cr.status,
+                        CreatedAt = cr.created_at,
+                        RespondedAt = cr.responded_at,
+                        User = new
+                        {
+                            cr.User.user_uid,
+                            cr.User.nickname,
+                            cr.User.profile_picture,
+                            cr.User.gender
+                        },
+                        Consultant = new
+                        {
+                            cr.Consultant.consultant_uid,
+                            cr.Consultant.nickname,
+                            cr.Consultant.profile_picture,
+                            cr.Consultant.profile_description,
+                            cr.Consultant.experience_years
+                        }
+                    })
+                    .ToListAsync();
+
+                return Ok(requests);
             }
             catch (Exception ex)
             {

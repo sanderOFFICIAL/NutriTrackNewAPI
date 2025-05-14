@@ -105,6 +105,49 @@ namespace NutriTrack.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+        [HttpGet("get-meals-by-uid")]
+        public async Task<IActionResult> GetMealsByUid([FromQuery] string uid)
+        {
+            try
+            {
+                // Перевірка наявності користувача
+                var user = await _context.Users.FindAsync(uid);
+                if (user == null)
+                {
+                    return NotFound(new { message = "User not found." });
+                }
+
+                // Отримання всіх прийомів їжі для користувача
+                var meals = await _context.MealEntries
+                    .Where(me => me.user_uid == uid)
+                    .OrderByDescending(me => me.entry_date)
+                    .Select(me => new
+                    {
+                        me.entry_id,
+                        me.meal_type,
+                        me.entry_date,
+                        me.product_name,
+                        me.quantity_grams,
+                        me.calories,
+                        me.protein,
+                        me.carbs,
+                        me.fats,
+                        me.created_at
+                    })
+                    .ToListAsync();
+
+                if (!meals.Any())
+                {
+                    return NotFound(new { message = "No meal entries found for this user." });
+                }
+
+                return Ok(meals);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
 
 
         [HttpGet("get-all-meals")]
