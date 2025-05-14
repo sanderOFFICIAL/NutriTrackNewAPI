@@ -422,6 +422,47 @@ namespace NutriTrack.Controllers
             }
         }
 
+        [HttpGet("get-linked-relationships")]
+        public async Task<IActionResult> GetLinkedConsultantsAndUsers()
+        {
+            try
+            {
+                var relationships = await _context.UserConsultants
+                    .Include(uc => uc.User)
+                    .Include(uc => uc.Consultant)
+                    .Select(uc => new
+                    {
+                        LinkId = uc.user_consultant_id,
+                        UserUid = uc.user_uid,
+                        ConsultantUid = uc.consultant_uid,
+                        AssignmentDate = uc.assignment_date,
+                        IsActive = uc.is_active,
+                        User = new
+                        {
+                            uc.User.user_uid,
+                            uc.User.nickname,
+                            uc.User.profile_picture,
+                            uc.User.gender
+                        },
+                        Consultant = new
+                        {
+                            uc.Consultant.consultant_uid,
+                            uc.Consultant.nickname,
+                            uc.Consultant.profile_picture,
+                            uc.Consultant.profile_description,
+                            uc.Consultant.experience_years
+                        }
+                    })
+                    .ToListAsync();
+
+                return Ok(relationships);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpGet("get-all-consultants")]
         public async Task<IActionResult> GetAllConsultants()
         {
@@ -511,17 +552,18 @@ namespace NutriTrack.Controllers
         public required string idToken { get; set; }
         public required string user_uid { get; set; }
     }
-    public class UserInviteConsultantRequest
-    {
-        public required string idToken { get; set; }
-        public required string consultant_uid { get; set; }
-    }
-
     public class ConsultantRespondToInviteRequest
     {
         public required string idToken { get; set; }
         public required string user_uid { get; set; }
         public bool is_accepted { get; set; }
     }
+    public class UserInviteConsultantRequest
+    {
+        public required string idToken { get; set; }
+        public required string consultant_uid { get; set; }
+    }
+
+
 
 }

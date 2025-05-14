@@ -100,14 +100,16 @@ namespace NutriTrack.Controllers
         }
 
         [HttpDelete("remove-consultant")]
-        public async Task<IActionResult> RemoveConsultant([FromBody] RemoveConsultantRequest request)
+        public async Task<IActionResult> RemoveConsultant(
+    [FromQuery] string idToken,
+    [FromQuery] string consultant_uid)
         {
             FirebaseService.Initialize();
-            var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(request.idToken);
+            var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(idToken);
             string uid = decodedToken.Uid;
 
             var userConsultant = await _context.UserConsultants
-                .FirstOrDefaultAsync(uc => uc.user_uid == uid && uc.consultant_uid == request.consultant_uid);
+                .FirstOrDefaultAsync(uc => uc.user_uid == uid && uc.consultant_uid == consultant_uid);
 
             if (userConsultant == null)
             {
@@ -117,7 +119,7 @@ namespace NutriTrack.Controllers
             _context.UserConsultants.Remove(userConsultant);
             await _context.SaveChangesAsync();
 
-            var consultant = await _context.Consultants.FindAsync(request.consultant_uid);
+            var consultant = await _context.Consultants.FindAsync(consultant_uid);
             if (consultant != null)
             {
                 consultant.current_clients -= 1;
@@ -126,7 +128,7 @@ namespace NutriTrack.Controllers
             }
 
             var consultantRequests = await _context.ConsultantRequests
-                .Where(cr => cr.user_uid == uid && cr.consultant_uid == request.consultant_uid && cr.status == "accepted")
+                .Where(cr => cr.user_uid == uid && cr.consultant_uid == consultant_uid && cr.status == "accepted")
                 .ToListAsync();
 
             if (consultantRequests.Any())
@@ -135,8 +137,9 @@ namespace NutriTrack.Controllers
                 await _context.SaveChangesAsync();
             }
 
-            return Ok(new { message = "Consultant removed successfully and pending requests deleted." });
+            return Ok(new { message = "Consultant removed successfully and accepted requests deleted." });
         }
+
 
         [HttpGet("get-user-by-uid")]
         public async Task<IActionResult> GetUserByUid([FromQuery] string uid)
