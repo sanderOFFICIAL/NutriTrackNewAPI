@@ -104,41 +104,54 @@ namespace NutriTrack.Controllers
     [FromQuery] string idToken,
     [FromQuery] string consultant_uid)
         {
-            FirebaseService.Initialize();
-            var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(idToken);
-            string uid = decodedToken.Uid;
-
-            var userConsultant = await _context.UserConsultants
-                .FirstOrDefaultAsync(uc => uc.user_uid == uid && uc.consultant_uid == consultant_uid);
-
-            if (userConsultant == null)
+            try
             {
-                return NotFound(new { message = "Consultant not found or not assigned to this user." });
+                // 1. Перевірка токену та отримання UID користувача
+                FirebaseService.Initialize();
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(idToken);
+                string userUid = decodedToken.Uid;
+
+                // 2. Перевірка, чи є такий зв'язок між користувачем і консультантом
+                var userConsultant = await _context.UserConsultants
+                    .FirstOrDefaultAsync(uc => uc.user_uid == userUid && uc.consultant_uid == consultant_uid);
+
+                if (userConsultant == null)
+                {
+                    return NotFound(new { message = "Consultant not found or not assigned to this user." });
+                }
+
+                // 3. Видалення зв'язку user-consultant
+                _context.UserConsultants.Remove(userConsultant);
+                await _context.SaveChangesAsync(); // окремий Save, щоб не було конфлікту далі
+
+                // 4. Зменшення кількості клієнтів у консультанта
+                var consultant = await _context.Consultants.FindAsync(consultant_uid);
+                if (consultant != null)
+                {
+                    consultant.current_clients = Math.Max(0, consultant.current_clients - 1);
+                    _context.Entry(consultant).State = EntityState.Modified;
+                    await _context.SaveChangesAsync();
+                }
+
+                // 5. Видалення всіх "accepted" запитів між цим користувачем і консультантом
+                var acceptedRequests = await _context.ConsultantRequests
+                    .Where(cr => cr.user_uid == userUid && cr.consultant_uid == consultant_uid && cr.status == "accepted")
+                    .ToListAsync();
+
+                if (acceptedRequests.Any())
+                {
+                    _context.ConsultantRequests.RemoveRange(acceptedRequests);
+                    await _context.SaveChangesAsync(); // ОБОВ'ЯЗКОВО!
+                }
+
+                return Ok(new { message = "Consultant removed successfully and accepted requests deleted." });
             }
-
-            _context.UserConsultants.Remove(userConsultant);
-            await _context.SaveChangesAsync();
-
-            var consultant = await _context.Consultants.FindAsync(consultant_uid);
-            if (consultant != null)
+            catch (FirebaseAuthException ex)
             {
-                consultant.current_clients -= 1;
-                _context.Entry(consultant).State = EntityState.Modified;
-                await _context.SaveChangesAsync();
+                return Unauthorized(new { message = "Invalid token", error = ex.Message });
             }
-
-            var consultantRequests = await _context.ConsultantRequests
-                .Where(cr => cr.user_uid == uid && cr.consultant_uid == consultant_uid && cr.status == "accepted")
-                .ToListAsync();
-
-            if (consultantRequests.Any())
-            {
-                _context.ConsultantRequests.RemoveRange(consultantRequests);
-                await _context.SaveChangesAsync();
-            }
-
-            return Ok(new { message = "Consultant removed successfully and accepted requests deleted." });
         }
+
 
 
         [HttpGet("get-user-by-uid")]

@@ -150,18 +150,18 @@ namespace NutriTrack.Controllers
 
 
         [HttpDelete("delete-note")]
-        public async Task<IActionResult> DeleteNote([FromBody] DeleteConsultantNoteRequest request)
+        public async Task<IActionResult> DeleteNote([FromQuery] string idToken, [FromQuery] int note_id)
         {
             try
             {
                 FirebaseService.Initialize();
-                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(request.IdToken);
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(idToken);
                 string consultantId = decodedToken.Uid;
 
                 var note = await _context.ConsultantNotes
                     .Include(n => n.UserGoal)
                     .ThenInclude(g => g.User)
-                    .FirstOrDefaultAsync(n => n.note_id == request.note_id);
+                    .FirstOrDefaultAsync(n => n.note_id == note_id);
 
                 if (note == null)
                 {
@@ -194,40 +194,41 @@ namespace NutriTrack.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
-    }
-
-    public class CreateConsultantNoteRequest
-    {
-
-        public required string IdToken { get; set; }
 
 
-        public int goal_id { get; set; }
+        public class CreateConsultantNoteRequest
+        {
+
+            public required string IdToken { get; set; }
 
 
-        public required string content { get; set; }
-    }
-
-    public class UpdateConsultantNoteRequest
-    {
-
-        public required string IdToken { get; set; }
+            public int goal_id { get; set; }
 
 
-        public int note_id { get; set; }
+            public required string content { get; set; }
+        }
 
-        public required string content { get; set; }
-    }
+        public class UpdateConsultantNoteRequest
+        {
 
-    public class GetConsultantNotesRequest
-    {
-        public int goal_id { get; set; }
-    }
+            public required string IdToken { get; set; }
 
-    public class DeleteConsultantNoteRequest
-    {
-        public required string IdToken { get; set; }
 
-        public int note_id { get; set; }
+            public int note_id { get; set; }
+
+            public required string content { get; set; }
+        }
+
+        public class GetConsultantNotesRequest
+        {
+            public int goal_id { get; set; }
+        }
+
+        public class DeleteConsultantNoteRequest
+        {
+            public required string IdToken { get; set; }
+
+            public int note_id { get; set; }
+        }
     }
 }
