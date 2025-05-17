@@ -253,7 +253,41 @@ namespace NutriTrack.Controllers
             }
 
         }
+        [HttpPut("update-experience-years")]
+        public async Task<IActionResult> UpdateConsultantExperienceYears([FromBody] UpdateConsultantExperienceYearsRequest request)
+        {
+            try
+            {
+                FirebaseService.Initialize();
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(request.idToken);
+                string uid = decodedToken.Uid;
 
+                var consultant = await _context.Consultants.FirstOrDefaultAsync(c => c.consultant_uid == uid);
+                if (consultant == null)
+                {
+                    return NotFound(new { message = "Consultant not found." });
+                }
+
+                if (request.new_experience_years.HasValue)
+                {
+                    if (request.new_experience_years.Value < 0)
+                    {
+                        return BadRequest(new { message = "Experience years cannot be negative." });
+                    }
+
+                    consultant.experience_years = request.new_experience_years.Value;
+                    _context.Entry(consultant).State = EntityState.Modified;
+                    await _context.SaveChangesAsync();
+                    return Ok(new { message = "Experience years updated successfully." });
+                }
+
+                return BadRequest(new { message = "New experience years count is required." });
+            }
+            catch (FirebaseAuthException ex)
+            {
+                return Unauthorized(new { message = "Invalid token", error = ex.Message });
+            }
+        }
         [HttpDelete("consultant-remove-user")]
         public async Task<IActionResult> RemoveUser([FromQuery] string idToken, [FromQuery] string user_uid)
         {
@@ -614,7 +648,11 @@ namespace NutriTrack.Controllers
         public required string idToken { get; set; }
         public required string consultant_uid { get; set; }
     }
-
+    public class UpdateConsultantExperienceYearsRequest
+    {
+        public required string idToken { get; set; }
+        public int? new_experience_years { get; set; }
+    }
 
 
 }

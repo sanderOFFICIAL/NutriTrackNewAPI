@@ -72,7 +72,34 @@ namespace NutriTrack.Controllers
                 return StatusCode(500, new { message = "Error removing user data.", error = ex.Message });
             }
         }
+        [HttpGet("get-all-admins")]
+        public async Task<IActionResult> GetAllAdmins()
+        {
+            try
+            {
+                var admins = await _context.Admins
+                    .Select(a => new
+                    {
+                        a.admin_uid,
+                        a.registration_date,
+                        a.name,
+                        a.email,
+                        a.phone_number
+                    })
+                    .ToListAsync();
 
+                if (admins == null || !admins.Any())
+                {
+                    return NotFound(new { message = "No admin users found." });
+                }
+
+                return Ok(admins);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error retrieving admin data.", error = ex.Message });
+            }
+        }
         [HttpDelete("remove-consultant/{consultantUid}")]
         public async Task<IActionResult> RemoveConsultant(string consultantUid)
         {
