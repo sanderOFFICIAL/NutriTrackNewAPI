@@ -331,7 +331,7 @@ namespace NutriTrackAPI.Controllers
             ActivityLevel activityLevel,
             int birthYear)
         {
-            const double CaloriesPerKg = 7700; // Кількість калорій на 1 кг ваги
+            const double CaloriesPerKg = 7700;
             string warning = null;
 
             // Calculate age
@@ -368,18 +368,16 @@ namespace NutriTrackAPI.Controllers
             }
 
             // Calculate weight difference and required calorie adjustment
-            double weightDifference = targetWeight - currentWeight; // Позитивне для набору, негативне для втрати
-            double totalCaloriesNeeded = Math.Abs(weightDifference) * CaloriesPerKg; // Загальні калорії для зміни ваги
-            double weeklyCalorieAdjustment = totalCaloriesNeeded / durationWeeks; // Тижневий дефіцит/надлишок
-            double dailyCalorieAdjustment = weeklyCalorieAdjustment / 7; // Денний дефіцит/надлишок
+            double weightDifference = targetWeight - currentWeight;
+            double totalCaloriesNeeded = Math.Abs(weightDifference) * CaloriesPerKg;
+            double weeklyCalorieAdjustment = totalCaloriesNeeded / durationWeeks;
+            double dailyCalorieAdjustment = weeklyCalorieAdjustment / 7;
 
-            // Warn if calorie adjustment is unrealistic
             if (dailyCalorieAdjustment > 2000)
             {
                 warning = $"Warning: Daily calorie adjustment ({dailyCalorieAdjustment:F2} kcal) is highly unrealistic. Consider increasing duration to at least {Math.Ceiling(Math.Abs(weightDifference) / 0.5)} weeks for safer weight change.";
             }
 
-            // Adjust daily calories based on goal type
             double dailyCalories = tdee;
             if (goalType == GoalType.Loss)
             {
@@ -390,29 +388,27 @@ namespace NutriTrackAPI.Controllers
             {
                 dailyCalories += dailyCalorieAdjustment;
             }
-            // For Maintain, dailyCalories remains TDEE
 
-            // Calculate macronutrients based on goal type
             double proteinPerKg;
             double fatPercentage;
             double carbPercentage;
             switch (goalType)
             {
                 case GoalType.Loss:
-                    proteinPerKg = 1.8; // 1.8 г/кг для втрати ваги
-                    fatPercentage = 0.20; // 20% калорій від жирів
-                    carbPercentage = 0.40; // 40% калорій від вуглеводів
+                    proteinPerKg = 1.8;
+                    fatPercentage = 0.20;
+                    carbPercentage = 0.40;
                     break;
                 case GoalType.Gain:
-                    proteinPerKg = 1.9; // 2.2 г/кг для набору ваги
-                    fatPercentage = 0.25; // 25% калорій від жирів
-                    carbPercentage = 0.45; // 45% калорій від вуглеводів
+                    proteinPerKg = 1.9;
+                    fatPercentage = 0.25;
+                    carbPercentage = 0.45;
                     break;
                 case GoalType.Maintain:
                 default:
-                    proteinPerKg = 1.4; // 1.4 г/кг для підтримки
-                    fatPercentage = 0.30; // 30% калорій від жирів
-                    carbPercentage = 0.40; // 40% калорій від вуглеводів
+                    proteinPerKg = 1.4;
+                    fatPercentage = 0.30;
+                    carbPercentage = 0.40;
                     break;
             }
 
@@ -420,11 +416,11 @@ namespace NutriTrackAPI.Controllers
             double averageWeight = (currentWeight + targetWeight) / 2;
             if (Math.Abs(weightDifference) > 20)
             {
-                proteinPerKg += 0.3; // Бонус для великих змін ваги
+                proteinPerKg += 0.3;
             }
             if (durationWeeks < 10)
             {
-                proteinPerKg += 0.1; // Бонус для коротких періодів
+                proteinPerKg += 0.1;
             }
 
             // Calculate protein based on average weight
